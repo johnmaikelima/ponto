@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum TrackingMode {
+  SIMPLE      // Apenas entrada e saída na obra
+  WITH_HOTEL  // Entrada e saída na obra + saída do hotel
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole @default(EMPLOYEE)
+  companyId String?  @db.ObjectId
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  timeRecords    TimeRecord[]
+  termAcceptance TermAcceptance?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Company {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  cnpj      String?  @unique
+  
+  employees User[]
+  projects  Project[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Project {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  location     String
+  description  String?
+  companyId    String       @db.ObjectId
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  active       Boolean      @default(true)
+  trackingMode TrackingMode @default(SIMPLE)
+  
+  timeRecords TimeRecord[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+enum RecordType {
+  ENTRY           // Entrada na obra
+  EXIT            // Saída da obra
+  HOTEL_DEPARTURE // Saída do hotel (apenas para modo WITH_HOTEL)
+}
+
+model TimeRecord {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String     @db.ObjectId
+  user      User       @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  projectId String     @db.ObjectId
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type      RecordType
+  timestamp DateTime   @default(now())
+  notes     String?
+  latitude  Float?
+  longitude Float?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TermAcceptance {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @unique @db.ObjectId
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  signature  String   // Base64 da assinatura desenhada
+  ipAddress  String?
+  userAgent  String?
+  acceptedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SystemSettings {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyName     String?
+  companyLogo     String?  // Base64 ou URL da logo
+  companyAddress  String?
+  companyPhone    String?
+  companyEmail    String?
+  companyCnpj     String?
+  primaryColor    String?  @default("#3b82f6")
+  secondaryColor  String?  @default("#6366f1")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
