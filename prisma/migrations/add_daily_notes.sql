@@ -1,0 +1,2 @@
+-- Criar modelo para anotações diárias
+-- Este arquivo é apenas referência, o modelo será criado no schema.prisma

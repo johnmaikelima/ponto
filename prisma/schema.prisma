@@ -1,0 +1,177 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum TrackingMode {
+  SIMPLE                    // Apenas entrada e saída na obra/cliente
+  DAY_TO_DAY               // Entrada e saída na empresa (casa -> empresa -> casa)
+  COMPANY_TO_CLIENT        // Casa -> Empresa -> Cliente -> Empresa -> Casa
+  HOME_TO_CLIENT           // Casa -> Cliente -> Casa (direto)
+  HOTEL_TO_CLIENT          // Hotel -> Cliente -> Hotel (ciclo simples)
+  WITH_HOTEL               // DEPRECATED: usar CLIENT_WITH_HOTEL
+  CLIENT_WITH_HOTEL        // Casa -> Empresa -> Hotel -> Cliente -> Hotel -> Empresa -> Casa
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole @default(EMPLOYEE)
+  companyId String?  @db.ObjectId
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  timeRecords     TimeRecord[]
+  termAcceptance  TermAcceptance?
+  dailyNotes      DailyNote[]
+  justifications  Justification[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model Company {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  cnpj      String?  @unique
+  
+  employees User[]
+  projects  Project[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Project {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  location     String
+  description  String?
+  companyId    String       @db.ObjectId
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  active       Boolean      @default(true)
+  trackingMode TrackingMode @default(SIMPLE)
+  
+  timeRecords TimeRecord[]
+  dailyNotes  DailyNote[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+enum RecordType {
+  // Registros básicos
+  HOME_DEPARTURE        // Saída de casa
+  HOME_ARRIVAL          // Chegada em casa
+  
+  // Registros na empresa
+  COMPANY_ARRIVAL       // Chegada na empresa
+  COMPANY_DEPARTURE     // Saída da empresa
+  
+  // Registros no cliente/obra
+  CLIENT_ARRIVAL        // Chegada no cliente
+  CLIENT_DEPARTURE      // Saída do cliente
+  
+  // Registros de hotel
+  HOTEL_ARRIVAL         // Chegada no hotel
+  HOTEL_DEPARTURE       // Saída do hotel
+  
+  // LEGADO - Manter para compatibilidade com registros antigos
+  ENTRY                 // DEPRECATED: usar CLIENT_ARRIVAL
+  EXIT                  // DEPRECATED: usar CLIENT_DEPARTURE
+}
+
+model TimeRecord {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String     @db.ObjectId
+  user      User       @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  projectId String     @db.ObjectId
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type      RecordType
+  timestamp DateTime   @default(now())
+  notes     String?
+  latitude  Float?
+  longitude Float?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TermAcceptance {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @unique @db.ObjectId
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  signature  String   // Base64 da assinatura desenhada
+  ipAddress  String?
+  userAgent  String?
+  acceptedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SystemSettings {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyName     String?
+  companyLogo     String?  // Base64 ou URL da logo
+  companyAddress  String?
+  companyPhone    String?
+  companyEmail    String?
+  companyCnpj     String?
+  primaryColor    String?  @default("#3b82f6")
+  secondaryColor  String?  @default("#6366f1")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DailyNote {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  projectId String   @db.ObjectId
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  date      DateTime // Data do dia (sem hora)
+  notes     String   // Anotações do dia
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([userId, projectId, date])
+  @@index([userId, date])
+  @@index([projectId, date])
+}
+
+enum JustificationType {
+  MEDICAL_LEAVE      // Falta Abonada (Atestado)
+  AUTHORIZED_LEAVE   // Falta Autorizada (Diretoria)
+  TIME_BANK          // Banco de Horas
+  UNJUSTIFIED        // Falta Injustificada (Descontar)
+  VACATION           // Férias
+  COMPENSATORY       // Folga Compensatória
+}
+
+model Justification {
+  id         String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String            @db.ObjectId
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  date       DateTime          // Dia da falta/justificativa
+  type       JustificationType
+  notes      String?           // Observações
+  attachment String?           // Base64 do anexo (PDF, imagem)
+  fileName   String?           // Nome do arquivo anexado
+  createdBy  String            @db.ObjectId // ID do admin que criou
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+}
